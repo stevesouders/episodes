@@ -13,6 +13,17 @@ limitations under the License.
 
 See the source code here:
     https://github.com/stevesouders/episodes.git
+
+Embed this snippet in your page:
+<script>
+var EPISODES = EPISODES || {};
+EPISODES.q = []; // command queue
+EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
+EPISODES.measure = function(en, st, en) { EPISODES.q.push( ["measure", en, st, en || new Date().getTime()] ); };
+EPISODES.done = function(callback) { EPISODES.q.push( ["done", callback] ); };
+EPISODES.mark("firstbyte");
+</script>
+<script async defer src="//yourdomain.com/js/episodes.js"></script>
 */
 
 
@@ -35,7 +46,14 @@ EPISODES.init = function() {
     EPISODES.starts = {};  // We need to save the starts so that given a measure we can say the epoch times that it began and ended.
 	EPISODES.findStartTime();
 	EPISODES.addEventListener("beforeunload", EPISODES.beforeUnload, false);
-	EPISODES.addEventListener("load", EPISODES.onload, false); // TODO - this could happen AFTER the load event has already fired!!
+    if ( "undefined" != typeof(document.readyState) && "complete" == document.readyState ) {
+        // The page is ALREADY loaded - start EPISODES right now.
+        EPISODES.onload();
+    }
+    else {
+        // Start EPISODES on onload.
+	    EPISODES.addEventListener("load", EPISODES.onload, false);
+    }
 
 	// Process any commands that have been queued up while episodes.js loaded asynchronously.
 	EPISODES.processQ();
