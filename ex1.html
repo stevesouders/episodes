@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<title>Episodes Example 1</title>
+<meta charset="UTF-8">
+
+<script>
+var EPISODES = EPISODES || {};
+EPISODES.q = []; // command queue
+EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
+EPISODES.measure = function(en, st, et) { EPISODES.q.push( ["measure", en, st, et || new Date().getTime()] ); };
+EPISODES.done = function(callback) { EPISODES.q.push( ["done", callback] ); };
+EPISODES.mark("firstbyte");
+(function() {
+    var epjs = document.createElement("script"); epjs.type = "text/javascript"; epjs.async = true;
+    epjs.src = "episodes.js";
+    var s = document.getElementsByTagName("script")[0]; s.parentNode.insertBefore(epjs, s);
+})();
+</script>
+
+<script src='http://ajax.googleapis.com/ajax/libs/jquery/1.2.6/jquery.min.js' onload='EPISODES.measure("jQuery done")'></script>
+
+</head>
+<body onload="setTimeout(function(){EPISODES.drawEpisodes(document.getElementById('episodesviz'))},10)" style="font-family: Arial;">
+<h1> Episodes Example 1</h1>
+
+<div>
+<a href="ex1.html">Click here</a> to see the full roundtrip time.
+</div>
+
+<p>
+Here are the episodes for this page:
+</p>
+<div style="margin-top: 20px; height: 270px;">
+<div id=episodesviz style="position: relative; width: 90%;">
+</div>
+</div>
+
+
+<script src='http://yui.yahooapis.com/2.5.2/build/utilities/utilities.js'
+	onload='EPISODES.measure("yui done")'></script>
+
+</body>
+
+</html>
