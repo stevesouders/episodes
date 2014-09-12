@@ -15,29 +15,42 @@ See the source code here:
     https://github.com/stevesouders/episodes.git
 
 Embed this snippet in your page:
-<script>
-var EPISODES = EPISODES || {};
-EPISODES.q = [];                      // command queue
-EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
-EPISODES.measure = function(en, st, en) { EPISODES.q.push( ["measure", en, st, en || new Date().getTime()] ); };
-EPISODES.done = function(callback) { EPISODES.q.push( ["done", callback] ); };
-EPISODES.bResourceTimingAgg = true;   // get aggregate Resource Timing stats (optional)
-EPISODES.mark("firstbyte");           // mark the first byte as high in the HEAD as possible.
-</script>
-<script async defer src="//yourdomain.com/js/episodes.js"></script>
+    <script async defer src="/js/episodes.js"></script>
+
+For more complex use of EPISODES you might need to add these stub functions:
+    <script>
+    var EPISODES = EPISODES || {};
+    EPISODES.q = [];                      // command queue
+    EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
+    EPISODES.measure = function(en, st, en) { EPISODES.q.push( ["measure", en, st, en || new Date().getTime()] ); };
+    </script>
+    <script async defer src="/js/episodes.js"></script>
+
 */
 
 
-// Don't overwrite pre-existing instances of the object (esp. for older browsers).
-var EPISODES = EPISODES || {};
-EPISODES.q = EPISODES.q || [];
-EPISODES.version = "0.2";
+var EPISODES = EPISODES || {};  // EPISODES namespace
+EPISODES.q = EPISODES.q || [];  // command queue
+
+EPISODES.setDefault = function(param, val) {
+    if ( "undefined" == typeof(EPISODES[param]) ) {
+            EPISODES[param] = val;
+    }
+
+    return EPISODES[param];
+};
+
+
+// OPTIONS
+EPISODES.setDefault("bSendBeacon", 0);         // 1 == beacon back the resulting metrics
+EPISODES.setDefault("beaconUrl", '/images/beacon.gif');  // URL to use for the metrics beacon
+EPISODES.setDefault("bResourceTimingAgg", 1);  // 1 == include Resource Timing aggregate stats.
+EPISODES.setDefault("autorun", 1);             // 1 == finish collecting metrics at window.onload
+
+// other settings
 EPISODES.targetOrigin = document.location.protocol + "//" + document.location.hostname;
 EPISODES.bPostMessage = ("undefined" != typeof(window.postMessage));
-
-// CUSTOMIZE THESE VARIABLES!!
-EPISODES.beaconUrl = EPISODES.beaconUrl || '/images/beacon.gif';
-EPISODES.autorun = ( "undefined" != typeof(EPISODES.autorun) ? EPISODES.autorun : true );
+EPISODES.version = "0.3";
 
 
 EPISODES.init = function() {
@@ -45,19 +58,29 @@ EPISODES.init = function() {
     EPISODES.marks = {};
     EPISODES.measures = {};
     EPISODES.starts = {};  // We need to save the starts so that given a measure we can say the epoch times that it began and ended.
+    EPISODES.hResourceTiming = undefined;
     EPISODES.findStartTime();
     EPISODES.addEventListener("beforeunload", EPISODES.beforeUnload, false);
+
+    // Process any commands that have been queued up while episodes.js loaded asynchronously.
+    EPISODES.processQ();
+
     if ( "undefined" != typeof(document.readyState) && "complete" == document.readyState ) {
         // The page is ALREADY loaded - start EPISODES right now.
-        EPISODES.onload();
+        if ( "undefined" != typeof(performance) && "undefined" != typeof(performance.timing) && 
+             "undefined" != typeof(performance.timing["loadEventEnd"]) ) {
+            // Fill in predefined marks from Nav Timing:
+            EPISODES.mark("firstbyte", performance.timing.responseStart);
+            EPISODES.mark("onload", performance.timing.loadEventEnd);
+        }
+        if ( EPISODES.autorun ) {
+            EPISODES.done();
+        }
     }
     else {
         // Start EPISODES on onload.
         EPISODES.addEventListener("load", EPISODES.onload, false);
     }
-
-    // Process any commands that have been queued up while episodes.js loaded asynchronously.
-    EPISODES.processQ();
 };
 
 
@@ -168,13 +191,17 @@ EPISODES.measure = function(episodeName, startNameOrTime, endNameOrTime) {
 };
 
 
-// In the case of Ajax or post-onload episodes, call done to signal the end of episodes.
+// In the case of Ajax or post-onload episodes, call "done()" to signal the end of episodes.
 EPISODES.done = function(callback) {
     EPISODES.bDone = true;
 
     EPISODES.mark("done");
 
-    if ( EPISODES.autorun ) {
+    if ( EPISODES.bResourceTimingAgg ) {
+        EPISODES.measureResources();
+    }
+
+    if ( EPISODES.bSendBeacon ) {
         EPISODES.sendBeacon();
     }
 
@@ -231,6 +258,29 @@ EPISODES.sendBeacon = function(url, params) {
         // strip the leading ","
         sTimes = sTimes.substring(1);
 
+        // Add resource timings
+        if ( EPISODES.hResourceTiming ) {
+            for (var key in EPISODES.hResourceTiming) {
+                if ( EPISODES.hResourceTiming.hasOwnProperty(key) ) {
+                    var hKey = EPISODES.hResourceTiming[key];
+                    if ( 0 < hKey['num'] ) {
+                        sTimes += "&rt_" + escape(key) + "=" + hKey['num'] + "," + hKey['max'] + "," + hKey['med'] + "," + hKey['avg'];
+                    }
+                }
+            }
+
+            if ( EPISODES.slowestEntry ) {
+                var hTimes = EPISODES.getResourceTiming(EPISODES.slowestEntry);
+                sTimes += "&slowest=" + encodeURIComponent(EPISODES.slowestEntry.name) + 
+                    "," + hTimes.dur +
+                    "," + ( hTimes.dns || "na" ) +
+                    "," + ( hTimes.tcp || "na" ) +
+                    "," + ( hTimes.ssl || "na" ) +
+                    "," + ( hTimes.ttfb || "na" );
+                    
+            }
+        }
+
         // Add user's params
         if ( params ) {
             for (var key in params) {
@@ -259,12 +309,10 @@ EPISODES.findStartTime = function() {
 
 
 // Find the start time from the Web Timing "performance" object.
-// http://test.w3.org/webperf/specs/NavigationTiming/
-// http://blog.chromium.org/2010/07/do-you-know-how-slow-your-web-page-is.html
 EPISODES.findStartWebTiming = function() {
     var startTime = undefined;
 
-    var performance = window.performance || window.mozPerformance || window.msPerformance || window.webkitPerformance;
+    var performance = window.performance;
  
     if ( "undefined" != typeof(performance) && "undefined" != typeof(performance.timing) && "undefined" != typeof(performance.timing["navigationStart"]) ) {
         startTime = performance.timing["navigationStart"];
@@ -304,7 +352,7 @@ EPISODES.findStartCookie = function() {
 
 
 // Set a cookie when the page unloads. Consume this cookie on the next page to get a "start time".
-// Doesn't work in some browsers (Opera).
+// Does not work in some browsers (Opera).
 EPISODES.beforeUnload = function(e) {
     document.cookie = "EPISODES=s=" + Number(new Date()) + "&r=" + escape(document.location) + "; path=/";
 };
@@ -317,6 +365,184 @@ EPISODES.onload = function(e) {
     if ( EPISODES.autorun ) {
         EPISODES.done();
     }
+};
+
+
+// Gather aggregate stats for all the resources in EPISODES.hResourceTiming.
+EPISODES.measureResources = function() {
+    if ( !window.performance || !window.performance.getEntriesByType ) {
+        // Bail if Resource Timing is not supported.
+        return;
+    }
+
+    EPISODES.bAllDomains = true;
+    if ( EPISODES.aDomains && 0 < EPISODES.aDomains.length ) {
+        // If we have a list of domains, then only look at those resources.
+        EPISODES.bAllDomains = false;
+        EPISODES.numDomains = EPISODES.aDomains.length;
+
+        // Handle wildcard domains: we convert the domain names to regex format.
+        for ( var i = 0; i < EPISODES.numDomains; i++ ) {
+            var domain = EPISODES.aDomains[i];
+            if ( 0 === domain.indexOf("*.") ) {
+                // If there's a wildcard we have to add a new domain for JUST the top- & second-level-domain values.
+                EPISODES.aDomains.push("^" + domain.replace(/^\*\./, "") + "$");
+            }
+            EPISODES.aDomains[i] = "^" + domain.replace(/\./g, "\\.").replace(/^\*\\\./, ".*\\.") + "$"; // backslash all "." and change "*." to "."
+        }
+        EPISODES.numDomains = EPISODES.aDomains.length; // update the value since we might have added new ones
+    }
+
+    // Record timing metrics for each appropriate resource.
+    var aDns=[], aDnsNz=[], aSsl=[], aSslNz=[], aTcp=[], aTcpNz=[], aTtfb=[], aTtfbNz=[], aDur=[], aDurNz=[];
+    var aEntries = performance.getEntriesByType("resource");
+    for ( var i = 0, len=aEntries.length, maxDur = 0; i < len; i++ ) {
+        var entry = aEntries[i];
+        if ( EPISODES.domainMatch(entry) ) {
+            var hTimes = EPISODES.getResourceTiming(entry);
+            var t = hTimes.dur;
+            aDur.push( t ); // we ALWAYS have a duration
+            if ( t ) { aDurNz.push( t ); }
+            if ( t > maxDur ) {
+                maxDur = t;
+                EPISODES.slowestEntry = entry;
+            }
+
+            if ( "undefined" !== typeof(t = hTimes.dns) ) {
+                aDns.push( t );
+                if ( t ) { aDnsNz.push( t ); }
+            }
+            if ( "undefined" != typeof(t = hTimes.tcp) ) {
+                aTcp.push( t );
+                if ( 0 < t ) { aTcpNz.push( t ); }
+            }
+            if ( "undefined" != typeof(t = hTimes.ttfb) ) {
+                t = hTimes.ttfb;
+                aTtfb.push( t );
+                if ( 0 < t ) { aTtfbNz.push( t ); }
+            }
+            if ( "undefined" != typeof(t = hTimes.ssl) ) {
+                aSsl.push( t );
+                if ( 0 < t ) { aSslNz.push( t ); }
+            }
+        }
+    }
+
+    // compute aggregate stats
+    EPISODES.hResourceTiming = {};
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'dns', aDns);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'dnsnz', aDnsNz);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'tcp', aTcp);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'tcpnz', aTcpNz);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'ssl', aSsl);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'sslnz', aSslNz);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'ttfb', aTtfb);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'ttfbnz', aTtfbNz);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'dur', aDur);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'durnz', aDurNz);
+};
+
+
+// return a hash of calculated times
+EPISODES.getResourceTiming = function(entry) {
+    var hTimes = {};
+    hTimes.dur = Math.round(entry.duration);
+
+    // Make sure we have access to the cross-domain restricted properties.
+    if ( 0 != entry.requestStart ) {
+        hTimes.dns = Math.round(entry.domainLookupEnd - entry.domainLookupStart);
+        hTimes.tcp = Math.round(entry.connectEnd - entry.connectStart);
+        hTimes.ttfb = Math.round(entry.responseStart - entry.startTime);
+        if ( entry.secureConnectionStart ) {
+            // secureConnectionStart can be "undefined" or "0"
+            hTimes.ssl = Math.round(entry.connectEnd - entry.secureConnectionStart);
+        }
+    }
+
+    return hTimes;
+};
+
+// Return true if the resource entry's domain matches the domain we're supposed to measure.
+EPISODES.domainMatch = function(entry) {
+    if ( EPISODES.bAllDomains ) {
+        return true;
+    }
+
+    // Actually test the domain. 
+    if ( ! EPISODES.tmpA ) {
+        EPISODES.tmpA = document.createElement('a'); // we re-use this anchor element to help parse URLs
+    }
+
+    tmpA.href = entry.name; // do this for easier parsing
+    var hostname = tmpA.hostname;
+    for ( var j = 0; j < EPISODES.numDomains; j++ ) {
+        if ( hostname.match(EPISODES.aDomains[j]) ) {
+            return true;
+        }
+    }
+
+    return false;
+};
+
+
+EPISODES.aggStats = function(h, name, a) {
+    h[name] = {};
+    h[name]['num'] = a.length;
+    if ( a.length ) {
+        a.sort(EPISODES.sortDesc);
+        h[name]['max'] = EPISODES.arrayMax(a, true);
+        h[name]['med'] = EPISODES.arrayMed(a, true);
+        h[name]['avg'] = EPISODES.arrayAvg(a);
+    }
+};
+
+
+// use this with the array sort() function to sort numbers
+EPISODES.sortDesc = function(a,b) {
+    return b - a;
+}
+
+
+// return the max value from an array
+// if bDesc == true then the array is presumed to be in descending order
+EPISODES.arrayMax = function(a, bDesc) {
+    return ( bDesc ? a[0] : a.sort(EPISODES.sortDesc)[0] );
+};
+
+
+// return the median value from an array
+// if bDesc == true then the array is presumed to be in descending order
+EPISODES.arrayMed = function(a, bDesc) {
+    if ( ! bDesc ) {
+        a.sort(EPISODES.sortDesc);
+    }
+
+    var len = a.length;
+    if ( 0 == len ) {
+        return undefined;
+    }
+
+    var middle = Math.floor(len / 2);
+    if ( 2*middle == len ) {
+        // even number of elements
+        return Math.round( (a[middle-1] + a[middle])/2 );
+    }
+    else {
+        // odd number of elements
+        return a[middle];
+    }
+};
+
+
+// return the average of an array of numbers
+EPISODES.arrayAvg = function(a) {
+    var len = a.length;
+    var sum = 0;
+    for ( var i = 0; i < len; i++ ) {
+        sum += a[i];
+    }
+
+    return Math.round(sum/len);
 };
 
 
