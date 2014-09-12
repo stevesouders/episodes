@@ -65,7 +65,7 @@ EPISODES.init = function() {
     // Process any commands that have been queued up while episodes.js loaded asynchronously.
     EPISODES.processQ();
 
-    if ( "undefined" != typeof(document.readyState) && "complete" == document.readyState ) {
+    if ( "complete" == document.readyState ) {
         // The page is ALREADY loaded - start EPISODES right now.
         if ( "undefined" != typeof(performance) && "undefined" != typeof(performance.timing) && 
              "undefined" != typeof(performance.timing["loadEventEnd"]) ) {
