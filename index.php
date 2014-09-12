@@ -8,8 +8,6 @@
 var EPISODES = EPISODES || {};
 EPISODES.q = []; // command queue
 EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
-EPISODES.measure = function(en, st, en) { EPISODES.q.push( ["measure", en, st, en || new Date().getTime()] ); };
-EPISODES.done = function(callback) { EPISODES.q.push( ["done", callback] ); };
 EPISODES.mark("firstbyte");
 </script>
 <script async defer src="episodes.js"></script>
