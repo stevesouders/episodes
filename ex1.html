@@ -9,14 +9,9 @@ var EPISODES = EPISODES || {};
 EPISODES.q = []; // command queue
 EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
 EPISODES.measure = function(en, st, et) { EPISODES.q.push( ["measure", en, st, et || new Date().getTime()] ); };
-EPISODES.done = function(callback) { EPISODES.q.push( ["done", callback] ); };
 EPISODES.mark("firstbyte");
-(function() {
-    var epjs = document.createElement("script"); epjs.type = "text/javascript"; epjs.async = true;
-    epjs.src = "episodes.js";
-    var s = document.getElementsByTagName("script")[0]; s.parentNode.insertBefore(epjs, s);
-})();
 </script>
+<script async defer src="episodes.js"></script>
 
 <script src='http://ajax.googleapis.com/ajax/libs/jquery/1.2.6/jquery.min.js' onload='EPISODES.measure("jQuery done")'></script>
 
