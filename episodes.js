@@ -273,10 +273,12 @@ EPISODES.sendBeacon = function(url, params) {
                 var hTimes = EPISODES.getResourceTiming(EPISODES.slowestEntry);
                 sTimes += "&slowest=" + encodeURIComponent(EPISODES.slowestEntry.name) + 
                     "," + hTimes.dur +
+                    "," + ( hTimes.download || "na" ) +
                     "," + ( hTimes.dns || "na" ) +
                     "," + ( hTimes.tcp || "na" ) +
                     "," + ( hTimes.ssl || "na" ) +
-                    "," + ( hTimes.ttfb || "na" );
+                    "," + ( hTimes.ttfb || "na" ) +
+                    "," + ( hTimes.content || "na" );
                     
             }
         }
@@ -394,20 +396,24 @@ EPISODES.measureResources = function() {
     }
 
     // Record timing metrics for each appropriate resource.
-    var aDns=[], aDnsNz=[], aSsl=[], aSslNz=[], aTcp=[], aTcpNz=[], aTtfb=[], aTtfbNz=[], aDur=[], aDurNz=[];
+    var aDns=[], aDnsNz=[], aSsl=[], aSslNz=[], aTcp=[], aTcpNz=[], aTtfb=[], aTtfbNz=[], aContent=[], aContentNz=[], aDur=[], aDurNz=[], aDownload=[], aDownloadNz=[];
     var aEntries = performance.getEntriesByType("resource");
-    for ( var i = 0, len=aEntries.length, maxDur = 0; i < len; i++ ) {
+    for ( var i = 0, len=aEntries.length, maxSlow = 0; i < len; i++ ) {
         var entry = aEntries[i];
         if ( EPISODES.domainMatch(entry) ) {
             var hTimes = EPISODES.getResourceTiming(entry);
             var t = hTimes.dur;
             aDur.push( t ); // we ALWAYS have a duration
             if ( t ) { aDurNz.push( t ); }
-            if ( t > maxDur ) {
-                maxDur = t;
-                EPISODES.slowestEntry = entry;
-            }
 
+            if ( "undefined" !== typeof(t = hTimes.download) ) {
+                aDownload.push( t );
+                if ( t ) { aDownloadNz.push( t ); }
+                if ( t > maxSlow ) {
+                    maxSlow = t;
+                    EPISODES.slowestEntry = entry;
+                }
+            }
             if ( "undefined" !== typeof(t = hTimes.dns) ) {
                 aDns.push( t );
                 if ( t ) { aDnsNz.push( t ); }
@@ -420,6 +426,11 @@ EPISODES.measureResources = function() {
                 t = hTimes.ttfb;
                 aTtfb.push( t );
                 if ( 0 < t ) { aTtfbNz.push( t ); }
+            }
+            if ( "undefined" != typeof(t = hTimes.content) ) {
+                t = hTimes.content;
+                aContent.push( t );
+                if ( 0 < t ) { aContentNz.push( t ); }
             }
             if ( "undefined" != typeof(t = hTimes.ssl) ) {
                 aSsl.push( t );
@@ -438,8 +449,12 @@ EPISODES.measureResources = function() {
     EPISODES.aggStats(EPISODES.hResourceTiming, 'sslnz', aSslNz);
     EPISODES.aggStats(EPISODES.hResourceTiming, 'ttfb', aTtfb);
     EPISODES.aggStats(EPISODES.hResourceTiming, 'ttfbnz', aTtfbNz);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'content', aContent);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'contentnz', aContentNz);
     EPISODES.aggStats(EPISODES.hResourceTiming, 'dur', aDur);
     EPISODES.aggStats(EPISODES.hResourceTiming, 'durnz', aDurNz);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'download', aDownload);
+    EPISODES.aggStats(EPISODES.hResourceTiming, 'downloadnz', aDownloadNz);
 };
 
 
@@ -453,6 +468,8 @@ EPISODES.getResourceTiming = function(entry) {
         hTimes.dns = Math.round(entry.domainLookupEnd - entry.domainLookupStart);
         hTimes.tcp = Math.round(entry.connectEnd - entry.connectStart);
         hTimes.ttfb = Math.round(entry.responseStart - entry.startTime);
+        hTimes.content = Math.round(entry.responseEnd - entry.responseStart);
+        hTimes.download = hTimes.dns + hTimes.tcp + hTimes.ttfb + hTimes.content;
         if ( entry.secureConnectionStart ) {
             // secureConnectionStart can be "undefined" or "0"
             hTimes.ssl = Math.round(entry.connectEnd - entry.secureConnectionStart);
