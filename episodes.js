@@ -467,7 +467,7 @@ EPISODES.getResourceTiming = function(entry) {
     if ( 0 != entry.requestStart ) {
         hTimes.dns = Math.round(entry.domainLookupEnd - entry.domainLookupStart);
         hTimes.tcp = Math.round(entry.connectEnd - entry.connectStart);
-        hTimes.ttfb = Math.round(entry.responseStart - entry.startTime);
+        hTimes.ttfb = Math.round(entry.responseStart - entry.requestStart);
         hTimes.content = Math.round(entry.responseEnd - entry.responseStart);
         hTimes.download = hTimes.dns + hTimes.tcp + hTimes.ttfb + hTimes.content;
         if ( entry.secureConnectionStart ) {
