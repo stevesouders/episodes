@@ -370,7 +370,7 @@ EPISODES.onload = function(e) {
 
 // Gather aggregate stats for all the resources in EPISODES.hResourceTiming.
 EPISODES.measureResources = function() {
-    if ( !window.performance || !window.performance.getEntriesByType ) {
+    if ( !("performance" in window) || !window.performance || !window.performance.getEntriesByType ) {
         // Bail if Resource Timing is not supported.
         return;
     }
