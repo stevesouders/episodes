@@ -10,6 +10,7 @@ EPISODES.q = []; // command queue
 EPISODES.mark = function(mn, mt) { EPISODES.q.push( ["mark", mn, mt || new Date().getTime()] ); };
 EPISODES.measure = function(en, st, et) { EPISODES.q.push( ["measure", en, st, et || new Date().getTime()] ); };
 EPISODES.mark("firstbyte");
+EPISODES.bSendBeacon = 1;
 </script>
 <script async defer src="episodes.js"></script>
 
